@@ -98,11 +98,23 @@ class DesignCanvas(ctk.CTkFrame):
         item_tags = self.canvas.gettags(clicked_item)
         
         if "selection_handle" in item_tags:
-            self.is_resizing = True
-            self.resize_handle = clicked_item
-            self.drag_start_x = canvas_x
-            self.drag_start_y = canvas_y
-            return
+            # Get the component ID from the handle tags
+            component_id = None
+            for tag in item_tags:
+                if tag not in ["selection_handle", "current"]:
+                    component_id = tag
+                    break
+            
+            if component_id:
+                # Find the component with this ID
+                for component in self.main_window.canvas_manager.components:
+                    if hasattr(component, 'id') and component.id == component_id:
+                        self.drag_component = component
+                        self.is_resizing = True
+                        self.resize_handle = clicked_item
+                        self.drag_start_x = canvas_x
+                        self.drag_start_y = canvas_y
+                        return
         
         # Find component at click position
         component = self.main_window.canvas_manager.get_component_at_position(canvas_x, canvas_y)
@@ -181,32 +193,29 @@ class DesignCanvas(ctk.CTkFrame):
         if not self.drag_component:
             return
         
+        component = self.drag_component
         dx = canvas_x - self.drag_start_x
         dy = canvas_y - self.drag_start_y
         
-        # Determine which handle is being dragged and resize accordingly
-        handle_tags = self.canvas.gettags(self.resize_handle)
-        component = self.drag_component
-        
-        new_width = component.width
-        new_height = component.height
-        new_x = component.x
-        new_y = component.y
-        
-        # Simple resize from bottom-right corner for now
+        # Simple resize from bottom-right corner
         new_width = max(20, component.width + dx)
         new_height = max(20, component.height + dy)
         
+        # Apply grid snapping if enabled
         if self.snap_to_grid:
-            new_width = round(new_width / self.grid_size) * self.grid_size
-            new_height = round(new_height / self.grid_size) * self.grid_size
+            grid_size = 20  # Use constant grid size for now
+            new_width = round(new_width / grid_size) * grid_size
+            new_height = round(new_height / grid_size) * grid_size
         
+        # Apply changes
         component.resize(new_width, new_height)
         component.draw(self.canvas)
         
         # Update properties panel
-        self.main_window.properties_panel.update_selection(component)
+        if hasattr(self.main_window, 'properties_panel'):
+            self.main_window.properties_panel.update_selection(component)
         
+        # Update drag start position for smooth resizing
         self.drag_start_x = canvas_x
         self.drag_start_y = canvas_y
     
