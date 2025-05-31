@@ -111,12 +111,20 @@ class Toolbar(ctk.CTkFrame):
         )
         self.zoom_reset_btn.grid(row=0, column=15, padx=5, pady=5)
         
+        # Auto-save toggle button
+        self.auto_save_btn = ctk.CTkButton(
+            self, text="Auto-save ✓" if hasattr(self.main_window, 'auto_save_enabled') and self.main_window.auto_save_enabled else "Auto-save", 
+            width=80,
+            command=self.toggle_auto_save
+        )
+        self.auto_save_btn.grid(row=0, column=16, padx=5, pady=5)
+        
         # Export button
         self.export_btn = ctk.CTkButton(
             self, text="Export", width=70,
             command=self.main_window.export_design
         )
-        self.export_btn.grid(row=0, column=16, padx=5, pady=5)
+        self.export_btn.grid(row=0, column=17, padx=5, pady=5)
     
     def toggle_grid(self):
         """Toggle grid visibility"""
@@ -144,6 +152,14 @@ class Toolbar(ctk.CTkFrame):
             zoom_percent = int(self.main_window.design_canvas.zoom_level * 100)
             self.zoom_label.configure(text=f"{zoom_percent}%")
     
+    def toggle_auto_save(self):
+        """Toggle auto-save functionality"""
+        self.main_window.toggle_auto_save()
+        # Update button text
+        self.auto_save_btn.configure(
+            text="Auto-save ✓" if self.main_window.auto_save_enabled else "Auto-save"
+        )
+    
     def show_about(self):
         """Show about dialog"""
         messagebox.showinfo(
@@ -154,6 +170,7 @@ class Toolbar(ctk.CTkFrame):
             "• Drag-and-drop UI components\n"
             "• Resize and move elements\n"
             "• Save/load designs\n"
-            "• Export as PNG/SVG\n\n"
+            "• Export as PNG/SVG\n"
+            "• Auto-save functionality\n\n"
             "Built with Python and CustomTkinter"
         )

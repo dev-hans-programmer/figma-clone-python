@@ -7,6 +7,8 @@ import tkinter as tk
 from tkinter import messagebox, filedialog
 import json
 import os
+import threading
+import time
 
 from ui.toolbar import Toolbar
 from ui.component_palette import ComponentPalette
@@ -36,14 +38,35 @@ class MainWindow:
         self.file_manager = FileManager()
         self.export_manager = ExportManager()
         self.canvas_manager = CanvasManager()
+        self.app_settings = AppSettings()
         
         # Current file path
         self.current_file = None
         self.is_modified = False
         
+        # Auto-save functionality
+        self.auto_save_enabled = self.app_settings.get("editor.auto_save", True)
+        auto_save_interval_setting = self.app_settings.get("editor.auto_save_interval", 300)
+        self.auto_save_interval = auto_save_interval_setting if isinstance(auto_save_interval_setting, (int, float)) else 300
+        self.auto_save_thread = None
+        self.auto_save_running = False
+        self.last_auto_save_time = time.time()
+        
+        # Auto-save file path
+        self.auto_save_dir = os.path.join(self.app_settings.settings_dir, "autosave")
+        os.makedirs(self.auto_save_dir, exist_ok=True)
+        self.auto_save_file = os.path.join(self.auto_save_dir, "autosave.json")
+        
         # Setup the UI
         self.setup_ui()
         self.setup_bindings()
+        
+        # Check for auto-save recovery
+        self.check_auto_save_recovery()
+        
+        # Start auto-save if enabled
+        if self.auto_save_enabled:
+            self.start_auto_save()
         
         # Update window title
         self.update_title()
@@ -212,20 +235,7 @@ class MainWindow:
         self.canvas_manager.select_component(component)
         self.properties_panel.update_selection(component)
     
-    def mark_modified(self):
-        """Mark the design as modified"""
-        self.is_modified = True
-        self.update_title()
-    
-    def update_title(self):
-        """Update the window title"""
-        title = "Mini Figma - UI Wireframe Designer"
-        if self.current_file:
-            filename = os.path.basename(self.current_file)
-            title = f"{filename} - {title}"
-        if self.is_modified:
-            title = f"*{title}"
-        self.root.title(title)
+
     
     def confirm_discard_changes(self):
         """Ask user to confirm discarding unsaved changes"""
@@ -246,8 +256,170 @@ class MainWindow:
         if self.is_modified:
             if not self.confirm_discard_changes():
                 return
+        
+        # Stop auto-save thread
+        self.stop_auto_save()
+        
+        # Clean up auto-save file if no unsaved changes
+        if not self.is_modified and os.path.exists(self.auto_save_file):
+            try:
+                os.remove(self.auto_save_file)
+            except:
+                pass  # Ignore cleanup errors
+        
         self.root.destroy()
     
+    def start_auto_save(self):
+        """Start the auto-save thread"""
+        if not self.auto_save_running:
+            self.auto_save_running = True
+            self.auto_save_thread = threading.Thread(target=self._auto_save_worker, daemon=True)
+            self.auto_save_thread.start()
+    
+    def stop_auto_save(self):
+        """Stop the auto-save thread"""
+        self.auto_save_running = False
+        if self.auto_save_thread and self.auto_save_thread.is_alive():
+            self.auto_save_thread.join(timeout=1.0)
+    
+    def _auto_save_worker(self):
+        """Auto-save worker thread"""
+        while self.auto_save_running:
+            try:
+                time.sleep(10)  # Check every 10 seconds
+                
+                if not self.auto_save_running:
+                    break
+                
+                current_time = time.time()
+                time_since_last_save = current_time - self.last_auto_save_time
+                
+                # Only auto-save if there are modifications and enough time has passed
+                if (self.is_modified and 
+                    time_since_last_save >= float(self.auto_save_interval) and
+                    self.canvas_manager.components):  # Only save if there are components
+                    
+                    self.root.after(0, self._perform_auto_save)
+                    self.last_auto_save_time = current_time
+                    
+            except Exception as e:
+                print(f"Auto-save error: {e}")
+                continue
+    
+    def _perform_auto_save(self):
+        """Perform the actual auto-save operation (runs on main thread)"""
+        try:
+            design_data = self.canvas_manager.get_design_data()
+            
+            # Add metadata for auto-save
+            auto_save_data = {
+                "metadata": {
+                    "version": "1.0",
+                    "auto_save": True,
+                    "original_file": self.current_file,
+                    "timestamp": time.time(),
+                    "app_name": "Mini Figma - UI Wireframe Designer"
+                },
+                "design": design_data
+            }
+            
+            # Save to auto-save file
+            with open(self.auto_save_file, 'w', encoding='utf-8') as f:
+                json.dump(auto_save_data, f, indent=2, ensure_ascii=False)
+            
+            # Update title to show auto-save status
+            self.update_title()
+            
+        except Exception as e:
+            print(f"Auto-save failed: {e}")
+    
+    def check_auto_save_recovery(self):
+        """Check if there's an auto-save file to recover"""
+        if os.path.exists(self.auto_save_file):
+            try:
+                with open(self.auto_save_file, 'r', encoding='utf-8') as f:
+                    auto_save_data = json.load(f)
+                
+                metadata = auto_save_data.get("metadata", {})
+                if metadata.get("auto_save"):
+                    # Show recovery dialog
+                    result = messagebox.askyesno(
+                        "Auto-save Recovery",
+                        "An auto-saved file was found. This might contain unsaved work from a previous session.\n\n"
+                        "Would you like to recover it?",
+                        icon="question"
+                    )
+                    
+                    if result:
+                        # Load the auto-saved design
+                        design_data = auto_save_data.get("design", {})
+                        self.canvas_manager.load_design(design_data)
+                        
+                        # Set as modified and update title
+                        original_file = metadata.get("original_file")
+                        if original_file and os.path.exists(original_file):
+                            self.current_file = original_file
+                        
+                        self.is_modified = True
+                        self.update_title()
+                        
+                        messagebox.showinfo(
+                            "Recovery Complete",
+                            "Your work has been recovered from the auto-save file."
+                        )
+                    else:
+                        # User declined recovery, remove auto-save file
+                        os.remove(self.auto_save_file)
+                        
+            except Exception as e:
+                print(f"Auto-save recovery error: {e}")
+                # If recovery fails, remove the corrupted auto-save file
+                try:
+                    os.remove(self.auto_save_file)
+                except:
+                    pass
+    
+    def toggle_auto_save(self):
+        """Toggle auto-save functionality"""
+        self.auto_save_enabled = not self.auto_save_enabled
+        self.app_settings.set("editor.auto_save", self.auto_save_enabled)
+        self.app_settings.save_settings()
+        
+        if self.auto_save_enabled:
+            self.start_auto_save()
+            messagebox.showinfo("Auto-save", "Auto-save has been enabled.")
+        else:
+            self.stop_auto_save()
+            messagebox.showinfo("Auto-save", "Auto-save has been disabled.")
+    
+    def set_auto_save_interval(self, interval_minutes):
+        """Set auto-save interval in minutes"""
+        self.auto_save_interval = interval_minutes * 60  # Convert to seconds
+        self.app_settings.set("editor.auto_save_interval", self.auto_save_interval)
+        self.app_settings.save_settings()
+    
+    def mark_modified(self):
+        """Mark the design as modified"""
+        self.is_modified = True
+        self.update_title()
+        # Reset auto-save timer when content is modified
+        self.last_auto_save_time = time.time()
+    
+    def update_title(self):
+        """Update the window title"""
+        title = "Mini Figma - UI Wireframe Designer"
+        if self.current_file:
+            filename = os.path.basename(self.current_file)
+            title = f"{filename} - {title}"
+        if self.is_modified:
+            title = f"*{title}"
+        
+        # Add auto-save indicator if auto-save is enabled
+        if self.auto_save_enabled and os.path.exists(self.auto_save_file):
+            title += " [Auto-saved]"
+            
+        self.root.title(title)
+
     def run(self):
         """Start the application"""
         self.root.mainloop()
