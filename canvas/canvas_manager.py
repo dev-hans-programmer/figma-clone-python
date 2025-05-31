@@ -6,6 +6,7 @@ from components.rectangle import RectangleComponent
 from components.button import ButtonComponent
 from components.input_field import InputFieldComponent
 from components.text_label import TextLabelComponent
+from components.group import GroupComponent
 
 class CanvasManager:
     """Manages components on the design canvas"""
@@ -14,6 +15,7 @@ class CanvasManager:
         """Initialize canvas manager"""
         self.components = []
         self.selected_component = None
+        self.selected_components = []  # For multi-selection
         self.canvas = None
         
         # Undo/Redo system
@@ -26,7 +28,8 @@ class CanvasManager:
             'rectangle': RectangleComponent,
             'button': ButtonComponent,
             'input': InputFieldComponent,
-            'text': TextLabelComponent
+            'text': TextLabelComponent,
+            'group': GroupComponent
         }
     
     def set_canvas(self, canvas):
@@ -323,3 +326,81 @@ class CanvasManager:
         if self.canvas:
             for comp in components_to_distribute:
                 comp.draw(self.canvas.canvas)
+    
+    def add_to_selection(self, component):
+        """Add a component to the multi-selection"""
+        if component not in self.selected_components:
+            self.selected_components.append(component)
+            component.select()
+    
+    def remove_from_selection(self, component):
+        """Remove a component from the multi-selection"""
+        if component in self.selected_components:
+            self.selected_components.remove(component)
+            component.deselect()
+    
+    def clear_multi_selection(self):
+        """Clear all multi-selected components"""
+        for component in self.selected_components:
+            component.deselect()
+        self.selected_components.clear()
+    
+    def group_selected_components(self):
+        """Group the currently selected components"""
+        if len(self.selected_components) < 2:
+            return None
+        
+        self._save_state()
+        
+        # Create group from selected components
+        components_to_group = self.selected_components.copy()
+        group = GroupComponent(components_to_group)
+        
+        # Remove individual components from main list
+        for component in components_to_group:
+            if component in self.components:
+                self.components.remove(component)
+        
+        # Add group to components
+        self.components.append(group)
+        
+        # Clear selection and select the new group
+        self.clear_multi_selection()
+        self.select_component(group)
+        
+        # Redraw canvas
+        if self.canvas:
+            self.canvas.redraw_all_components()
+        
+        return group
+    
+    def ungroup_component(self, group):
+        """Ungroup a group component"""
+        if not hasattr(group, 'is_group') or not group.is_group:
+            return []
+        
+        self._save_state()
+        
+        # Get children before ungrouping
+        children = group.ungroup()
+        
+        # Remove group from components
+        if group in self.components:
+            self.components.remove(group)
+        
+        # Add children back to components
+        for child in children:
+            self.components.append(child)
+        
+        # Clear selection
+        self.clear_selection()
+        
+        # Redraw canvas
+        if self.canvas:
+            self.canvas.redraw_all_components()
+        
+        return children
+    
+    def is_component_grouped(self, component):
+        """Check if a component is part of a group"""
+        return hasattr(component, 'parent_group') and component.parent_group is not None

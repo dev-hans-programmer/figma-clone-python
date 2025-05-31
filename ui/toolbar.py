@@ -111,20 +111,34 @@ class Toolbar(ctk.CTkFrame):
         )
         self.zoom_reset_btn.grid(row=0, column=15, padx=5, pady=5)
         
+        # Group button
+        self.group_btn = ctk.CTkButton(
+            self, text="Group", width=60,
+            command=self.group_components
+        )
+        self.group_btn.grid(row=0, column=16, padx=5, pady=5)
+        
+        # Ungroup button
+        self.ungroup_btn = ctk.CTkButton(
+            self, text="Ungroup", width=70,
+            command=self.ungroup_component
+        )
+        self.ungroup_btn.grid(row=0, column=17, padx=5, pady=5)
+        
         # Auto-save toggle button
         self.auto_save_btn = ctk.CTkButton(
             self, text="Auto-save ✓" if hasattr(self.main_window, 'auto_save_enabled') and self.main_window.auto_save_enabled else "Auto-save", 
             width=80,
             command=self.toggle_auto_save
         )
-        self.auto_save_btn.grid(row=0, column=16, padx=5, pady=5)
+        self.auto_save_btn.grid(row=0, column=18, padx=5, pady=5)
         
         # Export button
         self.export_btn = ctk.CTkButton(
             self, text="Export", width=70,
             command=self.main_window.export_design
         )
-        self.export_btn.grid(row=0, column=17, padx=5, pady=5)
+        self.export_btn.grid(row=0, column=19, padx=5, pady=5)
     
     def toggle_grid(self):
         """Toggle grid visibility"""
@@ -151,6 +165,25 @@ class Toolbar(ctk.CTkFrame):
         if hasattr(self.main_window, 'design_canvas'):
             zoom_percent = int(self.main_window.design_canvas.zoom_level * 100)
             self.zoom_label.configure(text=f"{zoom_percent}%")
+    
+    def group_components(self):
+        """Group selected components"""
+        if hasattr(self.main_window, 'canvas_manager'):
+            group = self.main_window.canvas_manager.group_selected_components()
+            if group:
+                print(f"Grouped {len(group.children)} components")
+            else:
+                print("Select at least 2 components to group")
+    
+    def ungroup_component(self):
+        """Ungroup selected component"""
+        if hasattr(self.main_window, 'canvas_manager'):
+            selected = self.main_window.canvas_manager.selected_component
+            if selected and hasattr(selected, 'is_group') and selected.is_group:
+                children = self.main_window.canvas_manager.ungroup_component(selected)
+                print(f"Ungrouped component into {len(children)} items")
+            else:
+                print("Select a group to ungroup")
     
     def toggle_auto_save(self):
         """Toggle auto-save functionality"""
