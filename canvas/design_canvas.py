@@ -120,16 +120,29 @@ class DesignCanvas(ctk.CTkFrame):
         component = self.main_window.canvas_manager.get_component_at_position(canvas_x, canvas_y)
         
         if component:
-            # Select and start dragging component
-            self.main_window.select_component(component)
-            self.is_dragging = True
-            self.drag_component = component
-            self.drag_start_x = canvas_x
-            self.drag_start_y = canvas_y
+            # Check if Ctrl is held for multi-selection
+            if event.state & 0x4:  # Ctrl key modifier
+                # Multi-selection mode
+                if component in self.main_window.canvas_manager.selected_components:
+                    self.main_window.canvas_manager.remove_from_selection(component)
+                else:
+                    self.main_window.canvas_manager.add_to_selection(component)
+                    if hasattr(self.main_window, 'properties_panel'):
+                        self.main_window.properties_panel.update_selection(component)
+            else:
+                # Single selection mode
+                self.main_window.canvas_manager.clear_multi_selection()
+                self.main_window.select_component(component)
+                self.is_dragging = True
+                self.drag_component = component
+                self.drag_start_x = canvas_x
+                self.drag_start_y = canvas_y
         else:
-            # Clear selection
+            # Clear all selections
             self.main_window.canvas_manager.clear_selection()
-            self.main_window.properties_panel.clear_selection()
+            self.main_window.canvas_manager.clear_multi_selection()
+            if hasattr(self.main_window, 'properties_panel'):
+                self.main_window.properties_panel.clear_selection()
     
     def on_drag(self, event):
         """Handle mouse drag events"""
